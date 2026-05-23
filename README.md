@@ -5,21 +5,26 @@ FastAPI service for WordPress blog translation: `/v1` API, MinIO storage, SQLite
 ## Stack
 
 - **dispatcher** — FastAPI + SQLite (`/data/jobs.db` on a volume). No separate DB container.
-- **MinIO** — S3-compatible object storage (separate container in `docker-compose.yml`).
+- **MinIO** — runs separately under `../storage` (not bundled by default).
 - **worker** — subprocess spawned per job (`python -m app.worker`).
 
 ## Quick start
 
 ```bash
 cp .env.example .env
-# Set GEMINI_API_KEY, ADMIN_PASSWORD, MINIO_ROOT_PASSWORD
+# Set GEMINI_API_KEY, ADMIN_PASSWORD, and MinIO credentials (match ../storage/.env)
 
+# Start MinIO (once)
+cd ../storage && docker compose up -d
+
+# Start translation sidecar
+cd ../translation-sidecar-service
 docker compose up -d --build
-# Create bucket (install mc locally or use MinIO console on :9001)
-./scripts/bootstrap-minio.sh
 
 curl http://127.0.0.1:8080/health
 ```
+
+Ensure bucket `visatop-translations` exists (MinIO console on :9001 or your bootstrap script).
 
 Admin UI: http://127.0.0.1:8080/ui/ (login from `.env`).
 
@@ -27,8 +32,8 @@ Admin UI: http://127.0.0.1:8080/ui/ (login from `.env`).
 
 | Variable | Purpose |
 |----------|---------|
-| `STORAGE_ENDPOINT` | Internal URL for dispatcher/worker (`http://minio:9000` in compose) |
-| `STORAGE_PUBLIC_ENDPOINT` | Host in presigned URLs — must be reachable from WordPress (`http://127.0.0.1:9000` or public hostname) |
+| `STORAGE_ENDPOINT` | Set in compose to `http://host.docker.internal:9000` (host MinIO from `../storage`) |
+| `STORAGE_PUBLIC_ENDPOINT` | Host in presigned URLs — must be reachable from WordPress (e.g. `http://138.68.184.84:9000`) |
 
 ## API (WordPress)
 
@@ -52,4 +57,12 @@ pytest -v
 
 - Put nginx in front with **IP allowlist** for `/v1/*` (WordPress droplet egress only).
 - UI uses session login (`ADMIN_USER` / `ADMIN_PASSWORD`).
-- Backup `translation-data` volume (`jobs.db`) and `minio-data`.
+- Backup `translation-data` volume (`jobs.db`) and MinIO data in `../storage`.
+
+### Optional bundled MinIO (local dev only)
+
+If you do not use `../storage`, enable the profile (port 9000 must be free):
+
+```bash
+docker compose --profile bundled-minio up -d --build
+```

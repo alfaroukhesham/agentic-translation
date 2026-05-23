@@ -1,28 +1,24 @@
+# Translation sidecar — dispatcher only.
+#
+# MinIO is expected from /root/visatop/storage (or any host on :9000):
+#   cd ../storage && docker compose up -d
+#
+# The dispatcher reaches MinIO via host.docker.internal (Linux: host-gateway).
+# Presigned URLs use STORAGE_PUBLIC_ENDPOINT from .env (must be reachable by WordPress).
+
 services:
-  minio:
-    image: minio/minio:latest
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-changeme}
-    volumes:
-      - minio-data:/data
-    ports:
-      - "127.0.0.1:9000:9000"
-      - "127.0.0.1:9001:9001"
   dispatcher:
     build: .
-    depends_on:
-      - minio
+    container_name: translation-dispatcher
     env_file:
       - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       DATA_DIR: /data
-      STORAGE_ENDPOINT: http://minio:9000
-      STORAGE_PUBLIC_ENDPOINT: ${STORAGE_PUBLIC_ENDPOINT:-http://127.0.0.1:9000}
-      STORAGE_BUCKET: ${STORAGE_BUCKET:-visatop-translations}
-      STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
-      STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-changeme}
+      # Inside the container, 127.0.0.1 is the container — use the host MinIO port.
+      STORAGE_ENDPOINT: http://host.docker.internal:9000
+      # STORAGE_PUBLIC_ENDPOINT, credentials, bucket, etc. come from .env (env_file)
       PROMPT_PATH: /app/prompt-blogs.md
     volumes:
       - translation-data:/data
@@ -34,7 +30,27 @@ services:
           cpus: "2"
           memory: 4G
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # Optional all-in-one dev stack (conflicts with /storage MinIO on :9000).
+  minio:
+    profiles: ["bundled-minio"]
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-changeme}
+    volumes:
+      - minio-data:/data
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
 
 volumes:
-  minio-data:
   translation-data:
+  minio-data:

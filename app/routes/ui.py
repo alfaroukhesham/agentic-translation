@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from app import db
-from app.dispatcher import verify_admin_password
+from app.auth import verify_admin_password
 from app.runner import get_worker_state
 
 router = APIRouter(prefix="/ui", tags=["ui"])

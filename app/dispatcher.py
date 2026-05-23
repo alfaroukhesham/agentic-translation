@@ -6,7 +6,6 @@ import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
-import bcrypt
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from starlette.middleware.sessions import SessionMiddleware
@@ -62,13 +61,3 @@ def health() -> dict:
         ),
     }
 
-
-def verify_admin_password(password: str) -> bool:
-    settings = get_settings()
-    try:
-        return bcrypt.checkpw(
-            password.encode("utf-8"),
-            settings.admin_password.encode("utf-8"),
-        )
-    except ValueError:
-        return password == settings.admin_password
