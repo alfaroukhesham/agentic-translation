@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block head %}
+<script src="https://unpkg.com/htmx.org@1.9.12"></script>
+{% endblock %}
+{% block content %}
+<h1>Dashboard</h1>
+<div hx-get="/ui/fragments/status" hx-trigger="every 3s" hx-swap="innerHTML">
+  <span id="status-pill" class="pill">Loading…</span>
+</div>
+<ul>
+  <li>Worker active: <strong>{{ "yes" if worker_active else "no" }}</strong></li>
+  <li>Running job: <code>{{ running_job_id or "—" }}</code></li>
+  <li>Queue depth: <strong>{{ queue_depth }}</strong></li>
+  <li>Processing: <strong>{{ processing_count }}</strong></li>
+  <li>Last job at: {{ last_job_at }}</li>
+</ul>
+{% endblock %}

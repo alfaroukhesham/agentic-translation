@@ -1,0 +1,40 @@
+services:
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-changeme}
+    volumes:
+      - minio-data:/data
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+  dispatcher:
+    build: .
+    depends_on:
+      - minio
+    env_file:
+      - .env
+    environment:
+      DATA_DIR: /data
+      STORAGE_ENDPOINT: http://minio:9000
+      STORAGE_PUBLIC_ENDPOINT: ${STORAGE_PUBLIC_ENDPOINT:-http://127.0.0.1:9000}
+      STORAGE_BUCKET: ${STORAGE_BUCKET:-visatop-translations}
+      STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-changeme}
+      PROMPT_PATH: /app/prompt-blogs.md
+    volumes:
+      - translation-data:/data
+    ports:
+      - "127.0.0.1:8080:8080"
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 4G
+    restart: unless-stopped
+
+volumes:
+  minio-data:
+  translation-data:

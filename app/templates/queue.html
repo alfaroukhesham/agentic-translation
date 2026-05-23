@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Queue{% endblock %}
+{% block content %}
+<h1>Job queue</h1>
+<table>
+  <thead>
+    <tr>
+      <th>wp_job_id</th>
+      <th>fastapi_job_id</th>
+      <th>status</th>
+      <th>position</th>
+      <th>created</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for j in jobs %}
+    <tr>
+      <td>{{ j.wp_job_id }}</td>
+      <td><code>{{ j.fastapi_job_id[:8] }}…</code></td>
+      <td>{{ j.status }}</td>
+      <td>{{ j.position }}</td>
+      <td>{{ j.created_at }}</td>
+      <td><a href="/ui/jobs/{{ j.fastapi_job_id }}">Detail</a></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

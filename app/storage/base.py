@@ -1,0 +1,2 @@
+class StorageNotFoundError(FileNotFoundError):
+    pass

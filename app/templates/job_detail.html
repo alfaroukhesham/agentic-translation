@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Job {{ job.fastapi_job_id }}{% endblock %}
+{% block content %}
+<h1>Job <code>{{ job.fastapi_job_id }}</code></h1>
+<p>WP job: {{ job.wp_job_id }} | Status: <strong>{{ job.status }}</strong></p>
+{% if job.last_error %}<p class="err">{{ job.last_error }}</p>{% endif %}
+<h2>Events</h2>
+<ul>
+  {% for e in events %}
+  <li>[{{ e.created_at }}] {{ e.level }} {{ e.event }} — {{ e.message }}</li>
+  {% endfor %}
+</ul>
+<h2>Task failures</h2>
+<ul>
+  {% for f in failures %}
+  <li>post {{ f.original_post_id }} / {{ f.lang }}: {{ f.error }}</li>
+  {% endfor %}
+</ul>
+{% endblock %}
