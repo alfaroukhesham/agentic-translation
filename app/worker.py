@@ -10,6 +10,7 @@ from pathlib import Path
 
 from app import db
 from app.blog_export import run_blog_export
+from app.translation_guard import IncompleteTranslationsError
 from app.config import get_settings
 from app.storage import get_storage
 from app.storage.base import StorageNotFoundError
@@ -57,6 +58,8 @@ async def run_job(fastapi_job_id: str) -> int:
             on_task_failure=on_failure,
         )
 
+        # run_blog_export raises IncompleteTranslationsError if any target_lang is empty.
+
         job_dir = _job_dir(fastapi_job_id)
         job_dir.mkdir(parents=True, exist_ok=True)
         out_path = job_dir / "output.json"
@@ -69,6 +72,10 @@ async def run_job(fastapi_job_id: str) -> int:
         db.set_status(fastapi_job_id, "completed", stats=stats)
         db.append_event(fastapi_job_id, "info", "worker.completed", json.dumps(stats))
         return 0
+    except IncompleteTranslationsError as exc:
+        db.set_status(fastapi_job_id, "failed", last_error=str(exc))
+        db.append_event(fastapi_job_id, "error", "worker.incomplete_translations", str(exc))
+        return 1
     except StorageNotFoundError as exc:
         db.set_status(fastapi_job_id, "failed", last_error=str(exc))
         db.append_event(fastapi_job_id, "error", "worker.failed", str(exc))

@@ -12,6 +12,12 @@ from pathlib import Path
 from typing import Any
 
 from app.config import LANG_NAMES, get_settings
+from app.content_chunks import content_chunk_threshold, split_html_content
+from app.translation_guard import (
+    _block_echoes_english,
+    assert_all_target_langs_filled,
+    translation_block_filled,
+)
 
 EventCallback = Callable[[str, str, dict], None] | None
 
@@ -47,6 +53,32 @@ def _make_system_instruction(base_prompt: str, target_lang: str) -> str:
         "translate string values only.\n"
         "Respect Yoast limits from the prompt: yoast_title ≤ 60 chars, yoast_desc ≤ 160 chars (count characters "
         "in the target language).\n"
+    )
+
+
+def _script_notes(target_lang: str) -> str:
+    if target_lang in ("hi", "ha", "tl"):
+        return (
+            f"\n\nFor {target_lang}: use natural phrasing in the target script; "
+            "translate the full body — do not leave content empty or in English.\n"
+        )
+    return ""
+
+
+def _chunk_body_instruction() -> str:
+    return (
+        "\n\n---\nCHUNK MODE: INPUT is JSON with `content_chunk` (one HTML fragment), "
+        "`chunk_index` (0-based), and `chunk_total`.\n"
+        "OUTPUT: valid JSON with **only** `{\"content\": \"...\"}` — the translated fragment, "
+        "preserving all HTML tags and structure.\n"
+    )
+
+
+def _metadata_only_instruction() -> str:
+    return (
+        "\n\n---\nMETADATA MODE: INPUT includes `title`, `yoast_title`, `yoast_desc`, `acf_fields`; "
+        "`content` is empty — do not translate body HTML in this call.\n"
+        "OUTPUT: same keys as usual; set `content` to an empty string.\n"
     )
 
 
@@ -175,25 +207,20 @@ def _coerce_translation_dict(data: dict, target_lang: str | None = None) -> dict
     return d
 
 
-def _block_echoes_english(english: dict, block: dict) -> bool:
-    en_t = (english.get("title") or "").strip()
-    en_c = english.get("content") or ""
-    t = (block.get("title") or "").strip()
-    c = block.get("content") or ""
-    if en_t and t == en_t:
-        return True
-    if en_c and c == en_c:
-        return True
-    return False
-
-
-def _validate_translation(data: dict, target_lang: str | None = None) -> dict:
+def _validate_translation(
+    data: dict,
+    target_lang: str | None = None,
+    *,
+    require_content: bool = True,
+) -> dict:
     data = _coerce_translation_dict(data, target_lang=target_lang)
     for key in ("title", "content", "yoast_title", "yoast_desc"):
         if key not in data:
             raise ValueError(f"Missing key '{key}' in model output")
         if not isinstance(data[key], str):
             raise ValueError(f"Expected '{key}' to be a string")
+    if require_content and not data["content"].strip():
+        raise ValueError("content must be a non-empty string")
     if "acf_fields" not in data:
         raise ValueError("Missing key 'acf_fields'")
     data["yoast_title"] = _truncate_chars(data["yoast_title"], 60)
@@ -201,14 +228,52 @@ def _validate_translation(data: dict, target_lang: str | None = None) -> dict:
     return data
 
 
-async def _translate_one_lang(
+def _extract_chunk_content(data: dict) -> str:
+    content = data.get("content")
+    if isinstance(content, str) and content.strip():
+        return content
+    alt = data.get("content_chunk")
+    if isinstance(alt, str) and alt.strip():
+        return alt
+    raise ValueError("chunk response missing non-empty content")
+
+
+async def _translate_chunked_payload(
     payload: dict,
     lang: str,
     gemini_model: str,
     system_instruction: str,
 ) -> dict:
-    raw = await _gemini_raw_json_payload(payload, system_instruction, gemini_model)
-    out = _validate_translation(raw, target_lang=lang)
+    """Long posts: metadata in one call, HTML body split into sequential chunk calls."""
+    chunks = split_html_content(payload.get("content") or "")
+    meta_payload = {**payload, "content": ""}
+    meta_si = system_instruction + _metadata_only_instruction() + _script_notes(lang)
+    meta_raw = await _gemini_raw_json_payload(meta_payload, meta_si, gemini_model)
+    meta = _validate_translation(meta_raw, target_lang=lang, require_content=False)
+
+    chunk_si = system_instruction + _chunk_body_instruction() + _script_notes(lang)
+    translated_parts: list[str] = []
+    total = len(chunks)
+    for index, chunk in enumerate(chunks):
+        if not chunk.strip():
+            translated_parts.append(chunk)
+            continue
+        chunk_payload = {
+            "content_chunk": chunk,
+            "chunk_index": index,
+            "chunk_total": total,
+        }
+        raw = await _gemini_raw_json_payload(chunk_payload, chunk_si, gemini_model)
+        translated_parts.append(_extract_chunk_content(raw))
+
+    merged = {
+        "title": meta["title"],
+        "content": "".join(translated_parts),
+        "yoast_title": meta["yoast_title"],
+        "yoast_desc": meta["yoast_desc"],
+        "acf_fields": meta["acf_fields"],
+    }
+    out = _validate_translation(merged, target_lang=lang, require_content=True)
     if _block_echoes_english(
         {"title": payload.get("title", ""), "content": payload.get("content", "")},
         out,
@@ -217,18 +282,25 @@ async def _translate_one_lang(
     return out
 
 
-def _translation_filled(item: dict, lang: str) -> bool:
-    tr = item.get("translations") or {}
-    if not isinstance(tr, dict):
-        return False
-    block = tr.get(lang)
-    if not isinstance(block, dict):
-        return False
-    t, c = block.get("title"), block.get("content")
-    if not (isinstance(t, str) and isinstance(c, str) and t.strip() and c.strip()):
-        return False
-    english = item.get("english") or {}
-    return not _block_echoes_english(english if isinstance(english, dict) else {}, block)
+async def _translate_one_lang(
+    payload: dict,
+    lang: str,
+    gemini_model: str,
+    system_instruction: str,
+) -> dict:
+    content = payload.get("content") or ""
+    si = system_instruction + _script_notes(lang)
+    if len(content) > content_chunk_threshold():
+        return await _translate_chunked_payload(payload, lang, gemini_model, si)
+
+    raw = await _gemini_raw_json_payload(payload, si, gemini_model)
+    out = _validate_translation(raw, target_lang=lang, require_content=True)
+    if _block_echoes_english(
+        {"title": payload.get("title", ""), "content": content},
+        out,
+    ):
+        raise ValueError("Model output still matches English source")
+    return out
 
 
 async def run_blog_export(
@@ -247,7 +319,11 @@ async def run_blog_export(
     """
     settings = get_settings()
     prompt_path = prompt_path or settings.prompt_path
-    gemini_model = gemini_model or settings.gemini_model
+    primary_model = gemini_model or settings.gemini_model
+    fallback_model = settings.gemini_model_fallback
+    models = [primary_model]
+    if fallback_model and fallback_model != primary_model:
+        models.append(fallback_model)
     max_concurrency = max_concurrency or settings.max_concurrency
     base_prompt = _load_prompt_base(prompt_path)
 
@@ -256,40 +332,89 @@ async def run_blog_export(
     sem = asyncio.Semaphore(max_concurrency)
     stats = {"tasks_total": 0, "tasks_ok": 0, "tasks_failed": 0}
 
+    async def _translate_with_model(
+        payload: dict,
+        lang: str,
+        model_name: str,
+        si: str,
+    ) -> tuple[dict | None, str | None]:
+        """Up to 3 attempts on one model; retries only on 429/503."""
+        last_err: str | None = None
+        for attempt in range(1, 4):
+            async with sem:
+                stats["tasks_total"] += 1
+                try:
+                    result = await _translate_one_lang(payload, lang, model_name, si)
+                    return result, None
+                except Exception as exc:
+                    last_err = str(exc)
+                    if attempt < 3 and ("429" in last_err or "503" in last_err):
+                        await asyncio.sleep(
+                            _extract_retry_delay(last_err) if "429" in last_err else 5
+                        )
+                        continue
+                    return None, last_err
+        return None, last_err
+
     async def _worker(item: dict, lang: str) -> None:
         nonlocal stats
         oid = item.get("original_post_id")
         english = item.get("english") or {}
         if not isinstance(english, dict):
             return
-        if _translation_filled(item, lang):
+        if translation_block_filled(item, lang):
             return
         payload = _english_to_payload(english)
+        content = payload.get("content") or ""
         si = _make_system_instruction(base_prompt, lang)
-        last_err = None
-        for attempt in range(1, 4):
-            async with sem:
-                stats["tasks_total"] += 1
-                try:
-                    result = await _translate_one_lang(payload, lang, gemini_model, si)
-                    item.setdefault("translations", {})
-                    if not isinstance(item["translations"], dict):
-                        item["translations"] = {}
-                    item["translations"][lang] = {
-                        "title": result["title"],
-                        "content": result["content"],
-                        "yoast_title": result["yoast_title"],
-                        "yoast_desc": result["yoast_desc"],
-                        "acf_fields": copy.deepcopy(result["acf_fields"]),
-                    }
-                    stats["tasks_ok"] += 1
-                    if on_event:
-                        on_event("info", "task.ok", {"post_id": oid, "lang": lang})
-                    return
-                except Exception as exc:
-                    last_err = str(exc)
-                    if attempt < 3 and ("429" in last_err or "503" in last_err):
-                        await asyncio.sleep(_extract_retry_delay(last_err) if "429" in last_err else 5)
+        last_err: str | None = None
+
+        for model_index, model_name in enumerate(models):
+            if model_index > 0 and on_event:
+                on_event(
+                    "info",
+                    "task.model_fallback",
+                    {
+                        "post_id": oid,
+                        "lang": lang,
+                        "from_model": models[model_index - 1],
+                        "to_model": model_name,
+                    },
+                )
+            result, model_err = await _translate_with_model(payload, lang, model_name, si)
+            if result is not None:
+                item.setdefault("translations", {})
+                if not isinstance(item["translations"], dict):
+                    item["translations"] = {}
+                item["translations"][lang] = {
+                    "title": result["title"],
+                    "content": result["content"],
+                    "yoast_title": result["yoast_title"],
+                    "yoast_desc": result["yoast_desc"],
+                    "acf_fields": copy.deepcopy(result["acf_fields"]),
+                }
+                stats["tasks_ok"] += 1
+                if on_event:
+                    meta = {"post_id": oid, "lang": lang, "model": model_name}
+                    if model_index > 0:
+                        meta["used_fallback"] = True
+                    on_event("info", "task.ok", meta)
+                return
+            last_err = model_err or f"{model_name} failed after retries"
+            if model_index == 0 and len(content) > content_chunk_threshold() and on_event:
+                on_event(
+                    "warn",
+                    "task.chunked_attempt_failed",
+                    {
+                        "post_id": oid,
+                        "lang": lang,
+                        "model": model_name,
+                        "content_chars": len(content),
+                        "chunks": len(split_html_content(content)),
+                        "error": last_err[:500],
+                    },
+                )
+
         stats["tasks_failed"] += 1
         if on_task_failure:
             on_task_failure(oid, lang, last_err or "unknown", 3)
@@ -305,11 +430,6 @@ async def run_blog_export(
     if tasks:
         await asyncio.gather(*tasks)
 
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        tr = item.get("translations") or {}
-        missing = [lang for lang in target_langs if not _translation_filled(item, lang)]
-        item["missing_languages"] = missing
+    assert_all_target_langs_filled(out, target_langs)
 
     return out, stats
