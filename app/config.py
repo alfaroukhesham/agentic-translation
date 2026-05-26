@@ -40,6 +40,7 @@ class Settings:
     max_concurrency: int
     admin_user: str
     admin_password: str
+    api_secret: str
     session_secret: str
     job_retention_days: int
     prompt_path: Path
@@ -66,6 +67,7 @@ def get_settings() -> Settings:
         max_concurrency=int(os.environ.get("MAX_CONCURRENCY", "6")),
         admin_user=os.environ.get("ADMIN_USER", "admin"),
         admin_password=os.environ.get("ADMIN_PASSWORD", "changeme"),
+        api_secret=os.environ.get("API_SECRET", "").strip(),
         session_secret=os.environ.get("SESSION_SECRET", "dev-secret-change-me"),
         job_retention_days=int(os.environ.get("JOB_RETENTION_DAYS", "90")),
         prompt_path=Path(os.environ.get("PROMPT_PATH", "prompt-blogs.md")),

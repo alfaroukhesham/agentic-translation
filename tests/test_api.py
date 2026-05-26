@@ -1,7 +1,10 @@
 from fastapi.testclient import TestClient
 
 from app import db
+from app.auth import WEBHOOK_SECRET_HEADER
 from app.dispatcher import app
+
+API_HEADERS = {WEBHOOK_SECRET_HEADER: "test-api-secret"}
 
 
 def test_health():
@@ -21,6 +24,12 @@ def test_export_upload():
             "export_key": "blog-translations/exports/99/export.json",
             "expires_in": 900,
         }
-        r = client.post("/v1/jobs/99/export-upload")
+        r = client.post("/v1/jobs/99/export-upload", headers=API_HEADERS)
     assert r.status_code == 200
     assert "exports/99/export.json" in r.json()["export_key"]
+
+
+def test_v1_requires_api_secret():
+    client = TestClient(app)
+    r = client.post("/v1/jobs/99/export-upload")
+    assert r.status_code == 401

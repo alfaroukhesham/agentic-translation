@@ -12,7 +12,7 @@ FastAPI service for WordPress blog translation: `/v1` API, MinIO storage, SQLite
 
 ```bash
 cp .env.example .env
-# Set GEMINI_API_KEY, ADMIN_PASSWORD, and MinIO credentials (match ../storage/.env)
+# Set GEMINI_API_KEY, API_SECRET, ADMIN_PASSWORD, and MinIO credentials (match ../storage/.env)
 
 # Start MinIO (once)
 cd ../storage && docker compose up -d
@@ -26,7 +26,18 @@ curl http://127.0.0.1:8080/health
 
 Ensure bucket `visatop-translations` exists (MinIO console on :9001 or your bootstrap script).
 
-Admin UI: http://127.0.0.1:8080/ui/ (login from `.env`).
+Admin UI: http://127.0.0.1:8080/ui/ (session login: `ADMIN_USER` / `ADMIN_PASSWORD`).
+
+Public API (WordPress): `http://<host>:8080/v1/...` — same secret as `BLOG_TRANSLATION_WEBHOOK_SECRET`:
+
+```http
+X-Translation-Secret: <API_SECRET>
+Content-Type: application/json
+```
+
+(`API_SECRET` in `.env` must equal WordPress `BLOG_TRANSLATION_WEBHOOK_SECRET`.)
+
+`/health`, `/docs`, and `/redoc` stay unauthenticated. Lock down port 8080 at the firewall to WordPress egress IPs when possible.
 
 ## MinIO endpoints
 
@@ -55,8 +66,8 @@ pytest -v
 
 ## Production notes
 
-- Put nginx in front with **IP allowlist** for `/v1/*` (WordPress droplet egress only).
-- UI uses session login (`ADMIN_USER` / `ADMIN_PASSWORD`).
+- Optional: nginx in front with TLS + IP allowlist; `/v1` still needs `API_SECRET` even behind nginx.
+- UI uses session login (`ADMIN_USER` / `ADMIN_PASSWORD`); `/v1` uses `API_SECRET` (not the admin password).
 - Backup `translation-data` volume (`jobs.db`) and MinIO data in `../storage`.
 
 ### Optional bundled MinIO (local dev only)

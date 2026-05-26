@@ -13,6 +13,7 @@ def tmp_data_dir(tmp_path, monkeypatch):
     monkeypatch.setenv("ADMIN_USER", "admin")
     monkeypatch.setenv("ADMIN_PASSWORD", "test")
     monkeypatch.setenv("SESSION_SECRET", "test-secret")
+    monkeypatch.setenv("API_SECRET", "test-api-secret")
     from app.config import get_settings
 
     get_settings.cache_clear()

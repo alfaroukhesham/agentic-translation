@@ -23,7 +23,8 @@ services:
     volumes:
       - translation-data:/data
     ports:
-      - "127.0.0.1:8080:8080"
+      # Public bind — /v1 requires API_SECRET; /ui uses session login.
+      - "8080:8080"
     deploy:
       resources:
         limits:

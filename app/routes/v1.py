@@ -5,9 +5,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from app import db
+from app.auth import verify_api_secret
 from app.config import get_settings
 from app.models import (
     ExportUploadResponse,
@@ -21,7 +22,11 @@ from app.storage import get_storage
 from app.storage.base import StorageNotFoundError
 from app.storage.keys import export_key, result_key
 
-router = APIRouter(prefix="/v1", tags=["v1"])
+router = APIRouter(
+    prefix="/v1",
+    tags=["v1"],
+    dependencies=[Depends(verify_api_secret)],
+)
 
 
 @router.post("/jobs/{wp_job_id}/export-upload", response_model=ExportUploadResponse)
@@ -35,7 +40,7 @@ def post_export_upload(wp_job_id: str) -> ExportUploadResponse:
     )
 
 
-@router.post("/translate", status_code=202, response_model=TranslateResponse202)
+@router.post("/translate", status_code=200, response_model=TranslateResponse202)
 async def post_translate(body: TranslateRequest) -> TranslateResponse202:
     wp_job_id = str(body.wp_job_id)
     rk = result_key(wp_job_id)
