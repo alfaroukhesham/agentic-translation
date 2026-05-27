@@ -10,6 +10,9 @@ from pathlib import Path
 
 from app import db
 from app.blog_export import run_blog_export
+from app.job_types import DEFAULT_JOB_TYPE
+from app.news_export import run_news_export
+from app.page_acf_export import run_page_acf_export
 from app.translation_guard import IncompleteTranslationsError
 from app.config import get_settings
 from app.storage import get_storage
@@ -31,6 +34,35 @@ def _load_input(job: dict) -> dict:
     raise FileNotFoundError("No input.json and no s3_export_key")
 
 
+async def _run_pipeline(
+    job_type: str,
+    export_doc: dict,
+    target_langs: list[str],
+    on_event,
+    on_failure,
+) -> tuple[dict, dict]:
+    if job_type == "news":
+        return await run_news_export(
+            export_doc=export_doc,
+            target_langs=target_langs,
+            on_event=on_event,
+            on_task_failure=on_failure,
+        )
+    if job_type == "page_acf":
+        return await run_page_acf_export(
+            export_doc=export_doc,
+            target_langs=target_langs,
+            on_event=on_event,
+            on_task_failure=on_failure,
+        )
+    return await run_blog_export(
+        export_doc=export_doc,
+        target_langs=target_langs,
+        on_event=on_event,
+        on_task_failure=on_failure,
+    )
+
+
 async def run_job(fastapi_job_id: str) -> int:
     db.init_schema()
     job = db.get_job_by_fastapi_id(fastapi_job_id)
@@ -38,8 +70,14 @@ async def run_job(fastapi_job_id: str) -> int:
         print(f"Job not found: {fastapi_job_id}", file=sys.stderr)
         return 1
 
+    job_type = job.get("job_type") or DEFAULT_JOB_TYPE
     db.set_status(fastapi_job_id, "processing")
-    db.append_event(fastapi_job_id, "info", "worker.started", "Worker subprocess started")
+    db.append_event(
+        fastapi_job_id,
+        "info",
+        "worker.started",
+        f"Worker subprocess started (job_type={job_type})",
+    )
 
     try:
         export_doc = _load_input(job)
@@ -51,14 +89,15 @@ async def run_job(fastapi_job_id: str) -> int:
         def on_failure(post_id, lang, error, attempts) -> None:
             db.record_task_failure(fastapi_job_id, post_id, lang, error, attempts)
 
-        filled, stats = await run_blog_export(
-            export_doc=export_doc,
-            target_langs=target_langs,
-            on_event=on_event,
-            on_task_failure=on_failure,
+        filled, stats = await _run_pipeline(
+            job_type,
+            export_doc,
+            target_langs,
+            on_event,
+            on_failure,
         )
 
-        # run_blog_export raises IncompleteTranslationsError if any target_lang is empty.
+        filled["job_type"] = job_type
 
         job_dir = _job_dir(fastapi_job_id)
         job_dir.mkdir(parents=True, exist_ok=True)

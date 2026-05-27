@@ -38,6 +38,7 @@ def init_schema() -> None:
               fastapi_job_id TEXT PRIMARY KEY,
               wp_job_id TEXT NOT NULL,
               en_post_id INTEGER NOT NULL,
+              job_type TEXT NOT NULL DEFAULT 'blog',
               status TEXT NOT NULL DEFAULT 'queued',
               target_langs TEXT NOT NULL,
               s3_export_key TEXT,
@@ -75,6 +76,12 @@ def init_schema() -> None:
             );
             """
         )
+        try:
+            conn.execute(
+                "ALTER TABLE jobs ADD COLUMN job_type TEXT NOT NULL DEFAULT 'blog'"
+            )
+        except sqlite3.OperationalError:
+            pass
         conn.commit()
 
 
@@ -107,6 +114,7 @@ def create_job(
     s3_result_key: str,
     source_mode: str,
     s3_export_key: str | None = None,
+    job_type: str = "blog",
 ) -> str:
     existing = get_active_job_by_wp_job_id(wp_job_id)
     if existing:
@@ -118,15 +126,16 @@ def create_job(
         conn.execute(
             """
             INSERT INTO jobs (
-              fastapi_job_id, wp_job_id, en_post_id, status, target_langs,
+              fastapi_job_id, wp_job_id, en_post_id, job_type, status, target_langs,
               s3_export_key, s3_result_key, callback_url, callback_secret,
               source_mode, created_at
-            ) VALUES (?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 fastapi_job_id,
                 str(wp_job_id),
                 en_post_id,
+                job_type,
                 json.dumps(target_langs),
                 s3_export_key,
                 s3_result_key,

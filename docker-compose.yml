@@ -20,6 +20,8 @@ services:
       STORAGE_ENDPOINT: http://host.docker.internal:9000
       # STORAGE_PUBLIC_ENDPOINT, credentials, bucket, etc. come from .env (env_file)
       PROMPT_PATH: /app/prompt-blogs.md
+      NEWS_PROMPT_PATH: /app/prompt-news.md
+      PAGE_ACF_PROMPT_PATH: /app/prompt-page-acf.md
     volumes:
       - translation-data:/data
     ports:

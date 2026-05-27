@@ -44,6 +44,8 @@ class Settings:
     session_secret: str
     job_retention_days: int
     prompt_path: Path
+    news_prompt_path: Path
+    page_acf_prompt_path: Path
 
 
 @lru_cache
@@ -71,4 +73,8 @@ def get_settings() -> Settings:
         session_secret=os.environ.get("SESSION_SECRET", "dev-secret-change-me"),
         job_retention_days=int(os.environ.get("JOB_RETENTION_DAYS", "90")),
         prompt_path=Path(os.environ.get("PROMPT_PATH", "prompt-blogs.md")),
+        news_prompt_path=Path(os.environ.get("NEWS_PROMPT_PATH", "prompt-news.md")),
+        page_acf_prompt_path=Path(
+            os.environ.get("PAGE_ACF_PROMPT_PATH", "prompt-page-acf.md")
+        ),
     )

@@ -9,19 +9,20 @@ from typing import Any
 import httpx
 
 from app import db
+from app.job_types import DEFAULT_JOB_TYPE
 
 
 async def send_webhook(job: dict[str, Any]) -> bool:
+    if job["status"] != "completed":
+        return False
+
     payload = {
         "wp_job_id": job["wp_job_id"],
         "fastapi_job_id": job["fastapi_job_id"],
-        "status": "completed" if job["status"] == "completed" else "failed",
+        "status": "completed",
+        "s3_result_key": job["s3_result_key"],
+        "job_type": job.get("job_type") or DEFAULT_JOB_TYPE,
     }
-    if job["status"] == "completed":
-        payload["s3_result_key"] = job["s3_result_key"]
-    else:
-        payload["error"] = job.get("last_error") or "translation failed"
-        payload["s3_result_key"] = None
 
     secret = job["callback_secret"]
     url = job["callback_url"]

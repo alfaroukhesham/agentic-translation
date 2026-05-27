@@ -48,12 +48,18 @@ Content-Type: application/json
 
 ## API (WordPress)
 
-- `POST /v1/jobs/{wp_job_id}/export-upload` — presigned PUT for export JSON
-- `POST /v1/translate` — start job (inline or `source.s3`)
-- `GET /v1/jobs/{fastapi_job_id}` — status fallback
+- `POST /v1/jobs/{wp_job_id}/export-upload` — presigned PUT for export JSON (optional `{"job_type": "blog"|"news"|"page_acf"}`)
+- `POST /v1/translate` — start job (inline or `source.s3`); `job_type` routes translation + S3 prefixes
+- `GET /v1/jobs/{fastapi_job_id}` — status fallback (includes `job_type`)
 - `POST /v1/jobs/{wp_job_id}/result-download` — presigned GET for result
 
-See `docs/superpowers/specs/2026-05-12-translation-service-design.md` and `wp-spec.md`.
+Canonical contract: `wp-fastapi-contract.md`.
+
+| `job_type` | S3 prefix | Translates |
+|------------|-----------|------------|
+| `blog` (default) | `blog-translations/` | title, content, Yoast, ACF |
+| `news` | `news-translations/` | title only |
+| `page_acf` | `page-acf-translations/` | `english.acf_fields` tree only |
 
 ## Local tests
 

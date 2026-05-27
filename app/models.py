@@ -4,7 +4,19 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, field_validator, model_validator
 
+from app.job_types import DEFAULT_JOB_TYPE, JobType, normalize_job_type
 from app.validate_export import validate_export_payload, validate_target_langs
+
+
+class JobTypeBody(BaseModel):
+    job_type: JobType | None = None
+
+    @field_validator("job_type", mode="before")
+    @classmethod
+    def normalize(cls, v: str | None) -> JobType | None:
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return None
+        return normalize_job_type(str(v))
 
 
 class SourceInline(BaseModel):
@@ -34,6 +46,14 @@ class TranslateRequest(BaseModel):
     callback_secret: str
     target_langs: list[str]
     source: Source
+    job_type: JobType | None = None
+
+    @field_validator("job_type", mode="before")
+    @classmethod
+    def normalize_job_type_field(cls, v: str | None) -> JobType | None:
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return None
+        return normalize_job_type(str(v))
 
     @field_validator("target_langs")
     @classmethod
@@ -47,8 +67,9 @@ class TranslateRequest(BaseModel):
 class TranslateResponse202(BaseModel):
     fastapi_job_id: str
     s3_result_key: str
-    status: str
-    position: int
+    job_type: JobType = DEFAULT_JOB_TYPE
+    status: str = "queued"
+    position: int = 0
 
 
 class ExportUploadResponse(BaseModel):
@@ -67,12 +88,24 @@ class JobStatusResponse(BaseModel):
     fastapi_job_id: str
     wp_job_id: str
     status: Literal["pending", "processing", "completed", "failed"]
+    job_type: JobType = DEFAULT_JOB_TYPE
     s3_result_key: str | None = None
     error: str | None = None
     stats: dict[str, Any] | None = None
 
 
-def validate_inline_export(data: dict) -> None:
-    errs = validate_export_payload(data)
+def resolve_job_type(
+    request_job_type: JobType | None,
+    inline_export: dict[str, Any] | None,
+) -> JobType:
+    if request_job_type is not None:
+        return request_job_type
+    if inline_export and inline_export.get("job_type"):
+        return normalize_job_type(str(inline_export["job_type"]))
+    return DEFAULT_JOB_TYPE
+
+
+def validate_inline_export(data: dict, job_type: JobType = DEFAULT_JOB_TYPE) -> None:
+    errs = validate_export_payload(data, job_type=job_type)
     if errs:
         raise ValueError("; ".join(errs))

@@ -37,7 +37,7 @@ async def _handle_worker_exit(fastapi_job_id: str, returncode: int) -> None:
     if job["status"] == "processing" and returncode != 0:
         db.set_status(fastapi_job_id, "failed", last_error=f"worker exit code {returncode}")
     job = db.get_job_by_fastapi_id(fastapi_job_id)
-    if job:
+    if job and job["status"] == "completed":
         await send_webhook(job)
     await schedule_worker_if_idle()
 

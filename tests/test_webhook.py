@@ -17,6 +17,7 @@ async def test_webhook_sends_secret_header():
         callback_secret="my-secret",
         s3_result_key="blog-translations/results/42/result.json",
         source_mode="inline",
+        job_type="news",
     )
     db.set_status(jid, "completed")
     job = db.get_job_by_fastapi_id(jid)
@@ -38,3 +39,27 @@ async def test_webhook_sends_secret_header():
     body = json.loads(call_kwargs.kwargs["content"])
     assert body["wp_job_id"] == "42"
     assert body["status"] == "completed"
+    assert body["job_type"] == "news"
+
+
+@pytest.mark.asyncio
+async def test_webhook_skipped_on_failure():
+    db.init_schema()
+    jid = db.create_job(
+        wp_job_id="99",
+        en_post_id=1,
+        target_langs=["fr"],
+        callback_url="https://httpbin.org/post",
+        callback_secret="my-secret",
+        s3_result_key="blog-translations/results/99/result.json",
+        source_mode="inline",
+    )
+    db.set_status(jid, "failed", last_error="boom")
+    job = db.get_job_by_fastapi_id(jid)
+
+    with patch("app.webhook.httpx.AsyncClient") as mock_client:
+        from app.webhook import send_webhook
+
+        ok = await send_webhook(job)
+    assert not ok
+    mock_client.assert_not_called()
