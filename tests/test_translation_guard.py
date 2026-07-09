@@ -71,8 +71,8 @@ def test_assert_all_target_langs_filled_success():
         ]
     }
     assert_all_target_langs_filled(doc, ["hi"])
-    assert doc["items"][0]["missing_languages"] == []
-    assert doc["items"][1]["missing_languages"] == []
+    assert "missing_languages" not in doc["items"][0]
+    assert "missing_languages" not in doc["items"][1]
     assert "hi" in doc["items"][0]["translations"]
 
 
@@ -88,6 +88,13 @@ def test_subset_only_checks_requested():
     item = _item_with_lang("hi")
     assert missing_languages_for_item(item, ["hi"]) == []
     assert missing_languages_for_item(item, ["hi", "fr"]) == ["fr"]
+
+
+def test_finalize_omits_missing_languages_when_complete():
+    doc = {"items": [_item_with_lang("fr")]}
+    details = finalize_export_translations(doc, ["fr"])
+    assert details == []
+    assert "missing_languages" not in doc["items"][0]
 
 
 def test_finalize_reports_per_post():

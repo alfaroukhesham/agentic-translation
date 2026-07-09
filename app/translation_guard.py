@@ -220,7 +220,12 @@ def finalize_export_translations(
             continue
         prune_item_translations(item, target_langs, job_type=job_type)
         missing = missing_languages_for_item(item, target_langs, job_type=job_type)
-        item["missing_languages"] = missing
+        # Completed results must not advertise missing_languages: [] — WordPress news
+        # import treats an empty array as "nothing to import" and skips all langs.
+        if missing:
+            item["missing_languages"] = missing
+        else:
+            item.pop("missing_languages", None)
         if missing:
             details.append(
                 {

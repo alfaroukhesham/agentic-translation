@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 import boto3
@@ -59,7 +60,24 @@ class S3Storage:
             Key=key,
             Body=body,
             ContentType=content_type,
+            CacheControl="no-cache, no-store, must-revalidate",
         )
+
+    def verify_put(self, key: str, body: bytes, *, attempts: int = 5) -> None:
+        """Read-after-write check so consumers never fetch a missing/stale object."""
+        last_err: Exception | None = None
+        for attempt in range(1, attempts + 1):
+            try:
+                got = self.get(key)
+            except StorageNotFoundError as exc:
+                last_err = exc
+            else:
+                if got == body:
+                    return
+                last_err = RuntimeError(f"byte mismatch for {key} ({len(got)} vs {len(body)})")
+            if attempt < attempts:
+                time.sleep(0.2 * attempt)
+        raise RuntimeError(f"S3 object not readable after upload: {key}") from last_err
 
     def get(self, key: str) -> bytes:
         try:

@@ -105,7 +105,9 @@ async def run_job(fastapi_job_id: str) -> int:
         out_bytes = json.dumps(filled, ensure_ascii=False, indent=2).encode("utf-8")
         out_path.write_bytes(out_bytes)
 
-        get_storage().put(job["s3_result_key"], out_bytes)
+        storage = get_storage()
+        storage.put(job["s3_result_key"], out_bytes)
+        storage.verify_put(job["s3_result_key"], out_bytes)
         db.append_event(fastapi_job_id, "info", "s3.uploaded", job["s3_result_key"])
 
         db.set_status(fastapi_job_id, "completed", stats=stats)

@@ -19,8 +19,8 @@ def _export_one_post():
 @pytest.mark.asyncio
 async def test_falls_back_to_flash_after_lite_fails(monkeypatch, tmp_path):
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
-    monkeypatch.setenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
-    monkeypatch.setenv("GEMINI_MODEL_FALLBACK", "gemini-2.5-flash")
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
+    monkeypatch.setenv("GEMINI_MODEL_FALLBACK", "gemini-3.5-flash")
     from app.config import get_settings
 
     get_settings.cache_clear()
@@ -29,7 +29,7 @@ async def test_falls_back_to_flash_after_lite_fails(monkeypatch, tmp_path):
 
     async def fake_translate(payload, lang, model_name, si):
         calls.append(model_name)
-        if model_name == "gemini-2.5-flash-lite":
+        if model_name == "gemini-3.1-flash-lite":
             raise ValueError("lite model empty output")
         return {
             "title": "नमस्ते",
@@ -55,7 +55,7 @@ async def test_falls_back_to_flash_after_lite_fails(monkeypatch, tmp_path):
             on_event=on_event,
         )
 
-    assert calls == ["gemini-2.5-flash-lite", "gemini-2.5-flash"]
+    assert calls == ["gemini-3.1-flash-lite", "gemini-3.5-flash"]
     assert stats["tasks_ok"] == 1
     assert stats["tasks_failed"] == 0
     assert out["items"][0]["translations"]["hi"]["title"] == "नमस्ते"
@@ -65,8 +65,8 @@ async def test_falls_back_to_flash_after_lite_fails(monkeypatch, tmp_path):
 @pytest.mark.asyncio
 async def test_fails_only_after_both_models_fail(monkeypatch, tmp_path):
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
-    monkeypatch.setenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
-    monkeypatch.setenv("GEMINI_MODEL_FALLBACK", "gemini-2.5-flash")
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
+    monkeypatch.setenv("GEMINI_MODEL_FALLBACK", "gemini-3.5-flash")
     from app.config import get_settings
 
     get_settings.cache_clear()

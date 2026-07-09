@@ -46,4 +46,5 @@ async def test_news_fills_title_only(tmp_path, monkeypatch):
     block = out["items"][0]["translations"]["fr"]
     assert block == {"title": "Guide du visa familial"}
     assert "content" not in block
+    assert "missing_languages" not in out["items"][0]
     assert out["items"][0]["english"]["content"] == "<p>english body</p>"
